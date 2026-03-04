@@ -40,12 +40,26 @@ check_dependencies() {
                 apt-get update && apt-get install -y jq
             elif [ "$ID" = "centos" ] || [ "$ID" = "rhel" ]; then
                 yum install -y jq
+            else
+                log_error "不支持的操作系统: $ID"
+                exit 1
             fi
+        fi
+
+        # 安装后再次验证
+        if ! command -v jq &> /dev/null; then
+            log_error "jq 安装失败"
+            exit 1
         fi
     fi
 
     if ! command -v xray &> /dev/null; then
         log_error "Xray 未安装"
+        exit 1
+    fi
+
+    if ! command -v systemctl &> /dev/null; then
+        log_error "systemctl 未找到，此脚本需要 systemd 支持"
         exit 1
     fi
 }

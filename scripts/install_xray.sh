@@ -868,6 +868,9 @@ EOF
 save_info() {
     INFO_FILE="$CONFIG_DIR/install_info.txt"
 
+    # 获取脚本所在目录的绝对路径
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
     cat > "$INFO_FILE" <<EOF
 Xray 安装信息
 =====================================
@@ -930,9 +933,9 @@ EOF
 
 用户管理
 =====================================
-添加用户: $INSTALL_DIR/../scripts/manage_xray_users.sh add
-删除用户: $INSTALL_DIR/../scripts/manage_xray_users.sh del
-列出用户: $INSTALL_DIR/../scripts/manage_xray_users.sh list
+添加用户: sudo $SCRIPT_DIR/manage_xray_users.sh add
+删除用户: sudo $SCRIPT_DIR/manage_xray_users.sh del
+列出用户: sudo $SCRIPT_DIR/manage_xray_users.sh list
 EOF
 
     echo -e "${GREEN}安装信息已保存到: $INFO_FILE${NC}"

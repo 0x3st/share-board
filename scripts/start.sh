@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BACKEND_DIR="$PROJECT_ROOT/backend"
@@ -39,75 +39,19 @@ check_dependencies() {
         exit 1
     fi
 
-    # 检查并安装 Python3 和 venv
-    if ! command -v python3 &> /dev/null; then
-        log_warn "Python3 未安装，正在安装..."
-        if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
-            sudo apt-get update
-            sudo apt-get install -y python3 python3-pip python3-venv
-        elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ]; then
-            sudo yum install -y python3 python3-pip
-        else
-            log_error "不支持的操作系统: $OS"
+    # 检查是否为 root 用户，决定是否使用 sudo
+    if [ "$EUID" -eq 0 ]; then
+        SUDO_CMD=""
+    else
+        if ! command -v sudo &> /dev/null; then
+            log_error "sudo 未安装且当前不是 root 用户"
+            log_error "请以 root 用户运行或安装 sudo"
             exit 1
         fi
-    else
-        # Python3已安装，但检查是否有venv模块
-        if ! python3 -m venv --help &> /dev/null; then
-            log_warn "python3-venv 未安装，正在安装..."
-            if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
-                PYTHON_VERSION=$(python3 --version | awk '{print $2}' | cut -d'.' -f1,2)
-                sudo apt-get install -y python${PYTHON_VERSION}-venv
-            elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ]; then
-                sudo yum install -y python3-virtualenv
-            fi
-        fi
+        SUDO_CMD="sudo"
     fi
 
-    # 检查并安装 Node.js
-    if ! command -v node &> /dev/null; then
-        log_warn "Node.js 未安装，正在安装..."
-        if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
-            # 安装 NodeSource 仓库（Node.js 20.x LTS）
-            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-            sudo apt-get install -y nodejs
-        elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ]; then
-            curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
-            sudo yum install -y nodejs
-        else
-            log_error "不支持的操作系统: $OS"
-            exit 1
-        fi
-    else
-        # 检查现有版本，如果是18.x则提示升级
-        NODE_VERSION=$(node --version | cut -d'v' -f2 | cut -d'.' -f1)
-        if [ "$NODE_VERSION" -lt 20 ]; then
-            log_warn "检测到 Node.js $NODE_VERSION.x，建议升级到 20.x LTS"
-            read -p "是否现在升级? (y/n): " UPGRADE
-            if [ "$UPGRADE" = "y" ]; then
-                if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
-                    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-                    sudo apt-get install -y nodejs
-                elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ]; then
-                    curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
-                    sudo yum install -y nodejs
-                fi
-            fi
-        fi
-    fi
-
-    # 检查并安装 npm（通常随 Node.js 一起安装）
-    if ! command -v npm &> /dev/null; then
-        log_error "npm 未安装，请手动安装 Node.js"
-        exit 1
-    fi
-
-    # 显示版本信息
-    log_info "Python 版本: $(python3 --version)"
-    log_info "Node.js 版本: $(node --version)"
-    log_info "npm 版本: $(npm --version)"
-
-    # 检查并安装其他必要工具
+    # 首先检查并安装必要的基础工具（在使用前）
     local missing_tools=()
 
     if ! command -v curl &> /dev/null; then
@@ -125,10 +69,86 @@ check_dependencies() {
     if [ ${#missing_tools[@]} -gt 0 ]; then
         log_warn "缺少工具: ${missing_tools[*]}，正在安装..."
         if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
-            sudo apt-get install -y "${missing_tools[@]}"
+            $SUDO_CMD apt-get update
+            $SUDO_CMD apt-get install -y "${missing_tools[@]}"
         elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ]; then
-            sudo yum install -y "${missing_tools[@]}"
+            $SUDO_CMD yum install -y "${missing_tools[@]}"
         fi
+    fi
+
+    # 检查并安装 Python3
+    if ! command -v python3 &> /dev/null; then
+        log_warn "Python3 未安装，正在安装..."
+        if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
+            $SUDO_CMD apt-get update
+            $SUDO_CMD apt-get install -y python3
+        elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ]; then
+            $SUDO_CMD yum install -y python3
+        else
+            log_error "不支持的操作系统: $OS"
+            exit 1
+        fi
+    fi
+
+    # 检查并安装 uv (现代化的Python包管理工具)
+    if ! command -v uv &> /dev/null; then
+        log_warn "uv 未安装，正在安装..."
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        # 添加uv到当前会话的PATH
+        export PATH="$HOME/.cargo/bin:$PATH"
+        if ! command -v uv &> /dev/null; then
+            log_error "uv 安装失败，请手动安装: curl -LsSf https://astral.sh/uv/install.sh | sh"
+            exit 1
+        fi
+    fi
+
+    # 检查并安装 Node.js
+    if ! command -v node &> /dev/null; then
+        log_warn "Node.js 未安装，正在安装..."
+        if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
+            # 安装 NodeSource 仓库（Node.js 20.x LTS）
+            curl -fsSL https://deb.nodesource.com/setup_20.x | $SUDO_CMD -E bash -
+            $SUDO_CMD apt-get install -y nodejs
+        elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ]; then
+            curl -fsSL https://rpm.nodesource.com/setup_20.x | $SUDO_CMD bash -
+            $SUDO_CMD yum install -y nodejs
+        else
+            log_error "不支持的操作系统: $OS"
+            exit 1
+        fi
+    else
+        # 检查现有版本，如果是18.x则提示升级
+        NODE_VERSION=$(node --version | cut -d'v' -f2 | cut -d'.' -f1)
+        if [ "$NODE_VERSION" -lt 20 ]; then
+            log_warn "检测到 Node.js $NODE_VERSION.x，建议升级到 20.x LTS"
+            read -p "是否现在升级? (y/n): " UPGRADE
+            if [ "$UPGRADE" = "y" ]; then
+                if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
+                    curl -fsSL https://deb.nodesource.com/setup_20.x | $SUDO_CMD -E bash -
+                    $SUDO_CMD apt-get install -y nodejs
+                elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ]; then
+                    curl -fsSL https://rpm.nodesource.com/setup_20.x | $SUDO_CMD bash -
+                    $SUDO_CMD yum install -y nodejs
+                fi
+            fi
+        fi
+    fi
+
+    # 检查并安装 npm（通常随 Node.js 一起安装）
+    if ! command -v npm &> /dev/null; then
+        log_error "npm 未安装，请手动安装 Node.js"
+        exit 1
+    fi
+
+    # 显示版本信息
+    log_info "Python 版本: $(python3 --version)"
+    log_info "Node.js 版本: $(node --version)"
+    log_info "npm 版本: $(npm --version)"
+
+    # 检查 systemctl（用于管理 Xray 服务）
+    if ! command -v systemctl &> /dev/null; then
+        log_warn "systemctl 未找到，无法管理 Xray 服务"
+        log_warn "此脚本需要 systemd 支持"
     fi
 
     log_info "依赖检查通过"
@@ -159,24 +179,32 @@ setup_backend() {
 
     if [ ! -f ".env" ]; then
         log_warn ".env 文件不存在，从 .env.example 复制"
+        if [ ! -f ".env.example" ]; then
+            log_error ".env.example 文件不存在，无法创建配置文件"
+            exit 1
+        fi
         cp .env.example .env
         log_warn "请编辑 .env 文件配置你的设置"
     fi
 
-    if [ ! -d "venv" ]; then
-        log_info "创建 Python 虚拟环境..."
-        python3 -m venv venv
+    if [ ! -d ".venv" ]; then
+        log_info "使用 uv 创建虚拟环境..."
+        uv venv
     fi
 
-    log_info "激活虚拟环境并安装依赖..."
-    source venv/bin/activate
-    pip install -q --upgrade pip
-    pip install -q -r requirements.txt
+    log_info "使用 uv 安装依赖..."
+    if ! uv pip install -r requirements.txt; then
+        log_error "Python 依赖安装失败"
+        exit 1
+    fi
 
     if [ ! -f "xray_monitor.db" ]; then
         log_info "初始化数据库..."
         alembic upgrade head
         python scripts/init_db.py
+    else
+        log_info "运行数据库迁移..."
+        alembic upgrade head
     fi
 
     log_info "后端设置完成"
@@ -189,7 +217,10 @@ setup_frontend() {
 
     if [ ! -d "node_modules" ]; then
         log_info "安装前端依赖..."
-        npm install
+        if ! npm install; then
+            log_error "前端依赖安装失败"
+            exit 1
+        fi
     fi
 
     log_info "前端设置完成"
@@ -199,9 +230,15 @@ start_backend() {
     log_info "启动后端服务..."
 
     cd "$BACKEND_DIR"
-    source venv/bin/activate
 
-    nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/xray-monitor-backend.log 2>&1 &
+    # 检查端口 8000 是否被占用
+    if lsof -Pi :8000 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
+        log_error "端口 8000 已被占用"
+        log_error "请先停止占用该端口的进程: lsof -i :8000"
+        exit 1
+    fi
+
+    nohup uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/xray-monitor-backend.log 2>&1 &
     echo $! > "$BACKEND_PID_FILE"
 
     sleep 2
@@ -221,6 +258,13 @@ start_frontend() {
     log_info "启动前端服务..."
 
     cd "$FRONTEND_DIR"
+
+    # 检查端口 5173 是否被占用
+    if lsof -Pi :5173 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
+        log_error "端口 5173 已被占用"
+        log_error "请先停止占用该端口的进程: lsof -i :5173"
+        exit 1
+    fi
 
     nohup npm run dev > /tmp/xray-monitor-frontend.log 2>&1 &
     echo $! > "$FRONTEND_PID_FILE"
@@ -385,8 +429,7 @@ show_menu() {
             ;;
         6)
             cd "$BACKEND_DIR"
-            source venv/bin/activate 2>/dev/null || true
-            python scripts/check_xray_grpc.py
+            uv run python scripts/check_xray_grpc.py
             ;;
         7)
             exit 0
