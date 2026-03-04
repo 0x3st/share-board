@@ -1,0 +1,14 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+pydantic==2.9.2
+pydantic-settings==2.6.0
+structlog==24.4.0
+python-dotenv==1.0.1
+sqlalchemy==2.0.23
+alembic==1.13.1
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+python-multipart==0.0.6
+grpcio==1.60.0
+grpcio-tools==1.60.0
+PyYAML==6.0.1
