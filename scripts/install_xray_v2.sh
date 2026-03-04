@@ -94,8 +94,28 @@ install_xray() {
     mkdir -p "$CONFIG_DIR"
     mkdir -p "$LOG_DIR"
 
+    # 复制二进制文件
     cp xray "$INSTALL_DIR/"
     chmod +x "$INSTALL_DIR/xray"
+
+    # 复制 geoip.dat 和 geosite.dat（路由规则必需）
+    if [ -f "geoip.dat" ]; then
+        cp geoip.dat "$INSTALL_DIR/"
+        echo -e "${GREEN}geoip.dat 已安装${NC}"
+    else
+        echo -e "${YELLOW}警告: geoip.dat 不存在，将从 GitHub 下载...${NC}"
+        wget -O "$INSTALL_DIR/geoip.dat" "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" || \
+        wget -e use_proxy=yes -e https_proxy=127.0.0.1:7890 -O "$INSTALL_DIR/geoip.dat" "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat"
+    fi
+
+    if [ -f "geosite.dat" ]; then
+        cp geosite.dat "$INSTALL_DIR/"
+        echo -e "${GREEN}geosite.dat 已安装${NC}"
+    else
+        echo -e "${YELLOW}警告: geosite.dat 不存在，将从 GitHub 下载...${NC}"
+        wget -O "$INSTALL_DIR/geosite.dat" "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" || \
+        wget -e use_proxy=yes -e https_proxy=127.0.0.1:7890 -O "$INSTALL_DIR/geosite.dat" "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"
+    fi
 
     ln -sf "$INSTALL_DIR/xray" /usr/local/bin/xray
 
@@ -177,9 +197,23 @@ configure_xray() {
     if [ "$PROXY_CHOICE" = "2" ]; then
         read -p "请输入 HTTP 代理地址 (例如: 127.0.0.1:7890): " PROXY_ADDR
         PROXY_PROTOCOL="http"
+
+        read -p "代理是否需要认证? (y/n, 默认: n): " PROXY_AUTH
+        if [ "$PROXY_AUTH" = "y" ]; then
+            read -p "请输入代理用户名: " PROXY_USER
+            read -sp "请输入代理密码: " PROXY_PASS
+            echo ""
+        fi
     elif [ "$PROXY_CHOICE" = "3" ]; then
         read -p "请输入 SOCKS5 代理地址 (例如: 127.0.0.1:1080): " PROXY_ADDR
         PROXY_PROTOCOL="socks"
+
+        read -p "代理是否需要认证? (y/n, 默认: n): " PROXY_AUTH
+        if [ "$PROXY_AUTH" = "y" ]; then
+            read -p "请输入代理用户名: " PROXY_USER
+            read -sp "请输入代理密码: " PROXY_PASS
+            echo ""
+        fi
     fi
 
     generate_config
@@ -719,7 +753,31 @@ generate_outbound_config() {
         PROXY_HOST=$(echo $PROXY_ADDR | cut -d: -f1)
         PROXY_PORT=$(echo $PROXY_ADDR | cut -d: -f2)
 
-        cat <<EOF
+        if [ -n "$PROXY_USER" ] && [ -n "$PROXY_PASS" ]; then
+            # 带认证的代理配置
+            cat <<EOF
+    {
+      "protocol": "$PROXY_PROTOCOL",
+      "tag": "proxy",
+      "settings": {
+        "servers": [
+          {
+            "address": "$PROXY_HOST",
+            "port": $PROXY_PORT,
+            "users": [
+              {
+                "user": "$PROXY_USER",
+                "pass": "$PROXY_PASS"
+              }
+            ]
+          }
+        ]
+      }
+    },
+EOF
+        else
+            # 无认证的代理配置
+            cat <<EOF
     {
       "protocol": "$PROXY_PROTOCOL",
       "tag": "proxy",
@@ -733,6 +791,7 @@ generate_outbound_config() {
       }
     },
 EOF
+        fi
     fi
 }
 
