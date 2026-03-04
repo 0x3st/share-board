@@ -440,7 +440,7 @@ show_menu() {
     esac
 }
 
-if [ "$1" = "start" ]; then
+if [ "${1:-}" = "start" ]; then
     check_dependencies
     check_xray
     setup_backend
@@ -448,15 +448,15 @@ if [ "$1" = "start" ]; then
     start_backend
     start_frontend
     check_status
-elif [ "$1" = "stop" ]; then
+elif [ "${1:-}" = "stop" ]; then
     stop_services
-elif [ "$1" = "restart" ]; then
+elif [ "${1:-}" = "restart" ]; then
     stop_services
     sleep 2
     start_backend
     start_frontend
     check_status
-elif [ "$1" = "status" ]; then
+elif [ "${1:-}" = "status" ]; then
     check_status
 else
     while true; do
