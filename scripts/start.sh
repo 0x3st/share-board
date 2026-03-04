@@ -39,7 +39,7 @@ check_dependencies() {
         exit 1
     fi
 
-    # 检查并安装 Python3
+    # 检查并安装 Python3 和 venv
     if ! command -v python3 &> /dev/null; then
         log_warn "Python3 未安装，正在安装..."
         if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
@@ -50,6 +50,17 @@ check_dependencies() {
         else
             log_error "不支持的操作系统: $OS"
             exit 1
+        fi
+    else
+        # Python3已安装，但检查是否有venv模块
+        if ! python3 -m venv --help &> /dev/null; then
+            log_warn "python3-venv 未安装，正在安装..."
+            if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
+                PYTHON_VERSION=$(python3 --version | awk '{print $2}' | cut -d'.' -f1,2)
+                sudo apt-get install -y python${PYTHON_VERSION}-venv
+            elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ]; then
+                sudo yum install -y python3-virtualenv
+            fi
         fi
     fi
 
