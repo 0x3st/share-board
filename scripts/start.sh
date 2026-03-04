@@ -201,11 +201,11 @@ setup_backend() {
 
     if [ ! -f "xray_monitor.db" ]; then
         log_info "初始化数据库..."
-        alembic upgrade head
-        python scripts/init_db.py
+        uv run alembic upgrade head
+        uv run python scripts/init_db.py
     else
         log_info "运行数据库迁移..."
-        alembic upgrade head
+        uv run alembic upgrade head
     fi
 
     log_info "后端设置完成"
