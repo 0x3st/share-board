@@ -28,21 +28,80 @@ log_error() {
 }
 
 check_dependencies() {
-    log_info "检查依赖..."
+    log_info "检查并安装依赖..."
 
+    # 检测操作系统
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS=$ID
+    else
+        log_error "无法检测操作系统"
+        exit 1
+    fi
+
+    # 检查并安装 Python3
     if ! command -v python3 &> /dev/null; then
-        log_error "Python3 未安装"
-        exit 1
+        log_warn "Python3 未安装，正在安装..."
+        if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
+            sudo apt-get update
+            sudo apt-get install -y python3 python3-pip python3-venv
+        elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ]; then
+            sudo yum install -y python3 python3-pip
+        else
+            log_error "不支持的操作系统: $OS"
+            exit 1
+        fi
     fi
 
+    # 检查并安装 Node.js
     if ! command -v node &> /dev/null; then
-        log_error "Node.js 未安装"
+        log_warn "Node.js 未安装，正在安装..."
+        if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
+            # 安装 NodeSource 仓库（Node.js 18.x LTS）
+            curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+        elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ]; then
+            curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
+            sudo yum install -y nodejs
+        else
+            log_error "不支持的操作系统: $OS"
+            exit 1
+        fi
+    fi
+
+    # 检查并安装 npm（通常随 Node.js 一起安装）
+    if ! command -v npm &> /dev/null; then
+        log_error "npm 未安装，请手动安装 Node.js"
         exit 1
     fi
 
-    if ! command -v npm &> /dev/null; then
-        log_error "npm 未安装"
-        exit 1
+    # 显示版本信息
+    log_info "Python 版本: $(python3 --version)"
+    log_info "Node.js 版本: $(node --version)"
+    log_info "npm 版本: $(npm --version)"
+
+    # 检查并安装其他必要工具
+    local missing_tools=()
+
+    if ! command -v curl &> /dev/null; then
+        missing_tools+=("curl")
+    fi
+
+    if ! command -v git &> /dev/null; then
+        missing_tools+=("git")
+    fi
+
+    if ! command -v sqlite3 &> /dev/null; then
+        missing_tools+=("sqlite3")
+    fi
+
+    if [ ${#missing_tools[@]} -gt 0 ]; then
+        log_warn "缺少工具: ${missing_tools[*]}，正在安装..."
+        if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
+            sudo apt-get install -y "${missing_tools[@]}"
+        elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ]; then
+            sudo yum install -y "${missing_tools[@]}"
+        fi
     fi
 
     log_info "依赖检查通过"
