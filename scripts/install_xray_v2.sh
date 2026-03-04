@@ -1,12 +1,26 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
+
+# 设置安全的文件权限掩码
+umask 077
 
 XRAY_VERSION="1.8.16"
 INSTALL_DIR="/usr/local/xray"
 CONFIG_DIR="/usr/local/etc/xray"
 LOG_DIR="/var/log/xray"
 SERVICE_FILE="/etc/systemd/system/xray.service"
+
+# 清理临时文件的trap
+cleanup() {
+    if [ -n "${REALITY_KEYS_FILE:-}" ] && [ -f "$REALITY_KEYS_FILE" ]; then
+        rm -f "$REALITY_KEYS_FILE"
+    fi
+    if [ -n "${WORKDIR:-}" ] && [ -d "$WORKDIR" ]; then
+        rm -rf "$WORKDIR"
+    fi
+}
+trap cleanup EXIT
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -72,8 +86,9 @@ download_xray() {
 
     DOWNLOAD_URL="https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-${XRAY_ARCH}.zip"
 
-    mkdir -p /tmp/xray-install
-    cd /tmp/xray-install
+    # 使用安全的临时目录
+    WORKDIR=$(mktemp -d /tmp/xray-install.XXXXXX)
+    cd "$WORKDIR"
 
     echo "下载地址: $DOWNLOAD_URL"
     wget -O xray.zip "$DOWNLOAD_URL" || {
@@ -128,7 +143,22 @@ generate_uuid() {
 }
 
 generate_reality_keys() {
-    xray x25519 | tee /tmp/xray_reality_keys.txt
+    # 使用安全的临时文件存储密钥
+    REALITY_KEYS_FILE=$(mktemp /tmp/xray_reality_keys.XXXXXX)
+    chmod 600 "$REALITY_KEYS_FILE"
+
+    if ! xray x25519 > "$REALITY_KEYS_FILE" 2>&1; then
+        echo -e "${RED}生成Reality密钥失败${NC}"
+        rm -f "$REALITY_KEYS_FILE"
+        exit 1
+    fi
+
+    # 验证密钥文件非空
+    if [ ! -s "$REALITY_KEYS_FILE" ]; then
+        echo -e "${RED}Reality密钥文件为空${NC}"
+        rm -f "$REALITY_KEYS_FILE"
+        exit 1
+    fi
 }
 
 configure_xray() {
@@ -232,8 +262,15 @@ configure_reality() {
     echo "生成 Reality 密钥对..."
     generate_reality_keys
 
-    REALITY_PRIVATE_KEY=$(grep "Private key:" /tmp/xray_reality_keys.txt | awk '{print $3}')
-    REALITY_PUBLIC_KEY=$(grep "Public key:" /tmp/xray_reality_keys.txt | awk '{print $3}')
+    # 从安全的临时文件读取密钥
+    REALITY_PRIVATE_KEY=$(grep "Private key:" "$REALITY_KEYS_FILE" | awk '{print $3}')
+    REALITY_PUBLIC_KEY=$(grep "Public key:" "$REALITY_KEYS_FILE" | awk '{print $3}')
+
+    # 验证密钥非空
+    if [ -z "$REALITY_PRIVATE_KEY" ] || [ -z "$REALITY_PUBLIC_KEY" ]; then
+        echo -e "${RED}Reality密钥提取失败${NC}"
+        exit 1
+    fi
 
     REALITY_SHORT_IDS='["", "0123456789abcdef"]'
 
@@ -272,6 +309,8 @@ generate_config() {
         generate_http_config
     fi
 
+    # 设置配置文件安全权限（仅root可读写）
+    chmod 600 "$CONFIG_DIR/config.json"
     echo -e "${GREEN}配置文件已生成: $CONFIG_DIR/config.json${NC}"
 
     echo "验证配置文件..."
@@ -959,9 +998,6 @@ main() {
     save_info
     start_xray
     show_summary
-
-    cd /
-    rm -rf /tmp/xray-install
 }
 
 main

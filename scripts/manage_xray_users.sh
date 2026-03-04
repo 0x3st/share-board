@@ -88,7 +88,7 @@ list_users() {
     log_info "入站标签: $INBOUND_TAG"
     echo ""
 
-    USERS=$(jq -r ".inbounds[] | select(.tag == \"$INBOUND_TAG\") | .settings.clients[] | \"\(.email) | \(.id)\"" "$CONFIG_FILE")
+    USERS=$(jq -r --arg tag "$INBOUND_TAG" '.inbounds[] | select(.tag == $tag) | .settings.clients[] | "\(.email) | \(.id)"' "$CONFIG_FILE")
 
     if [ -z "$USERS" ]; then
         log_warn "暂无用户"
@@ -119,7 +119,7 @@ add_user() {
     PROTOCOL=$(get_inbound_protocol)
     INBOUND_TAG=$(get_inbound_tag)
 
-    EXISTING=$(jq -r ".inbounds[] | select(.tag == \"$INBOUND_TAG\") | .settings.clients[] | select(.email == \"$EMAIL\") | .email" "$CONFIG_FILE")
+    EXISTING=$(jq -r --arg tag "$INBOUND_TAG" --arg email "$EMAIL" '.inbounds[] | select(.tag == $tag) | .settings.clients[] | select(.email == $email) | .email' "$CONFIG_FILE")
     if [ -n "$EXISTING" ]; then
         log_error "用户 $EMAIL 已存在"
         exit 1
@@ -131,33 +131,13 @@ add_user() {
     backup_config
 
     if [ "$PROTOCOL" = "vmess" ]; then
-        NEW_CLIENT=$(cat <<EOF
-{
-  "id": "$UUID",
-  "email": "$EMAIL",
-  "alterId": 0
-}
-EOF
-)
+        NEW_CLIENT=$(jq -n --arg id "$UUID" --arg email "$EMAIL" '{id: $id, email: $email, alterId: 0}')
     elif [ "$PROTOCOL" = "vless" ]; then
-        FLOW=$(jq -r ".inbounds[] | select(.tag == \"$INBOUND_TAG\") | .settings.clients[0].flow // empty" "$CONFIG_FILE")
+        FLOW=$(jq -r --arg tag "$INBOUND_TAG" '.inbounds[] | select(.tag == $tag) | .settings.clients[0].flow // empty' "$CONFIG_FILE")
         if [ -n "$FLOW" ]; then
-            NEW_CLIENT=$(cat <<EOF
-{
-  "id": "$UUID",
-  "email": "$EMAIL",
-  "flow": "$FLOW"
-}
-EOF
-)
+            NEW_CLIENT=$(jq -n --arg id "$UUID" --arg email "$EMAIL" --arg flow "$FLOW" '{id: $id, email: $email, flow: $flow}')
         else
-            NEW_CLIENT=$(cat <<EOF
-{
-  "id": "$UUID",
-  "email": "$EMAIL"
-}
-EOF
-)
+            NEW_CLIENT=$(jq -n --arg id "$UUID" --arg email "$EMAIL" '{id: $id, email: $email}')
         fi
     else
         log_error "不支持的协议: $PROTOCOL"
@@ -165,10 +145,12 @@ EOF
     fi
 
     TMP_FILE=$(mktemp)
-    jq ".inbounds |= map(if .tag == \"$INBOUND_TAG\" then .settings.clients += [$NEW_CLIENT] else . end)" "$CONFIG_FILE" > "$TMP_FILE"
+    jq --arg tag "$INBOUND_TAG" --argjson client "$NEW_CLIENT" '.inbounds |= map(if .tag == $tag then .settings.clients += [$client] else . end)' "$CONFIG_FILE" > "$TMP_FILE"
 
     if xray -test -config "$TMP_FILE" > /dev/null 2>&1; then
         mv "$TMP_FILE" "$CONFIG_FILE"
+        # 设置安全权限
+        chmod 600 "$CONFIG_FILE"
         log_info "用户添加成功！"
         echo ""
         echo -e "${GREEN}用户信息:${NC}"
@@ -225,10 +207,12 @@ delete_user() {
     backup_config
 
     TMP_FILE=$(mktemp)
-    jq ".inbounds |= map(if .tag == \"$INBOUND_TAG\" then .settings.clients |= map(select(.email != \"$EMAIL\")) else . end)" "$CONFIG_FILE" > "$TMP_FILE"
+    jq --arg tag "$INBOUND_TAG" --arg email "$EMAIL" '.inbounds |= map(if .tag == $tag then .settings.clients |= map(select(.email != $email)) else . end)' "$CONFIG_FILE" > "$TMP_FILE"
 
     if xray -test -config "$TMP_FILE" > /dev/null 2>&1; then
         mv "$TMP_FILE" "$CONFIG_FILE"
+        # 设置安全权限
+        chmod 600 "$CONFIG_FILE"
         log_info "用户删除成功！"
 
         read -p "是否重启 Xray 服务使配置生效? (y/n): " RESTART
@@ -264,7 +248,7 @@ show_user_info() {
     fi
 
     INBOUND_TAG=$(get_inbound_tag)
-    USER_INFO=$(jq -r ".inbounds[] | select(.tag == \"$INBOUND_TAG\") | .settings.clients[] | select(.email == \"$EMAIL\")" "$CONFIG_FILE")
+    USER_INFO=$(jq -r --arg tag "$INBOUND_TAG" --arg email "$EMAIL" '.inbounds[] | select(.tag == $tag) | .settings.clients[] | select(.email == $email)' "$CONFIG_FILE")
 
     if [ -z "$USER_INFO" ]; then
         log_error "用户 $EMAIL 不存在"
