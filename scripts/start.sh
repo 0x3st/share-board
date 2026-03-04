@@ -57,15 +57,31 @@ check_dependencies() {
     if ! command -v node &> /dev/null; then
         log_warn "Node.js 未安装，正在安装..."
         if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
-            # 安装 NodeSource 仓库（Node.js 18.x LTS）
-            curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+            # 安装 NodeSource 仓库（Node.js 20.x LTS）
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
             sudo apt-get install -y nodejs
         elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ]; then
-            curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
+            curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
             sudo yum install -y nodejs
         else
             log_error "不支持的操作系统: $OS"
             exit 1
+        fi
+    else
+        # 检查现有版本，如果是18.x则提示升级
+        NODE_VERSION=$(node --version | cut -d'v' -f2 | cut -d'.' -f1)
+        if [ "$NODE_VERSION" -lt 20 ]; then
+            log_warn "检测到 Node.js $NODE_VERSION.x，建议升级到 20.x LTS"
+            read -p "是否现在升级? (y/n): " UPGRADE
+            if [ "$UPGRADE" = "y" ]; then
+                if [ "$OS" = "ubuntu" ] || [ "$OS" = "debian" ]; then
+                    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+                    sudo apt-get install -y nodejs
+                elif [ "$OS" = "centos" ] || [ "$OS" = "rhel" ]; then
+                    curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
+                    sudo yum install -y nodejs
+                fi
+            fi
         fi
     fi
 
