@@ -94,12 +94,13 @@ check_dependencies() {
     if ! command -v uv &> /dev/null; then
         log_warn "uv 未安装，正在安装..."
         curl -LsSf https://astral.sh/uv/install.sh | sh
-        # 添加uv到当前会话的PATH
-        export PATH="$HOME/.cargo/bin:$PATH"
+        # 添加uv到当前会话的PATH (支持多个可能的安装位置)
+        export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
         if ! command -v uv &> /dev/null; then
             log_error "uv 安装失败，请手动安装: curl -LsSf https://astral.sh/uv/install.sh | sh"
             exit 1
         fi
+        log_info "uv 安装成功: $(uv --version)"
     fi
 
     # 检查并安装 Node.js
