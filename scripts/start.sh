@@ -155,21 +155,25 @@ check_dependencies() {
     log_info "依赖检查通过"
 }
 
-check_xray() {
-    log_info "检查 Xray 服务..."
+check_3xui() {
+    log_info "检查 3x-ui 服务..."
 
-    if ! systemctl is-active --quiet xray 2>/dev/null; then
-        log_warn "Xray 服务未运行"
+    if ! systemctl is-active --quiet x-ui 2>/dev/null; then
+        log_warn "3x-ui 服务未运行"
         echo ""
-        echo "请先安装并启动 Xray:"
-        echo "  sudo $PROJECT_ROOT/scripts/install_xray.sh"
+        echo "请先安装并启动 3x-ui:"
+        echo "  sudo $PROJECT_ROOT/scripts/install_3x-ui.sh"
         echo ""
         read -p "是否继续启动监控系统? (y/n): " CONTINUE
         if [ "$CONTINUE" != "y" ]; then
             exit 0
         fi
     else
-        log_info "Xray 服务正在运行"
+        log_info "3x-ui 服务正在运行"
+
+        # 获取3x-ui访问地址
+        local PORT=$(grep -oP '(?<="Port":)\d+' /etc/x-ui/x-ui.db 2>/dev/null || echo "2053")
+        log_info "3x-ui 面板地址: http://localhost:$PORT"
     fi
 }
 
@@ -346,11 +350,12 @@ check_status() {
 
     echo ""
 
-    if systemctl is-active --quiet xray 2>/dev/null; then
-        echo -e "${GREEN}✓${NC} Xray 服务: 运行中"
-        echo "  状态: systemctl status xray"
+    if systemctl is-active --quiet x-ui 2>/dev/null; then
+        echo -e "${GREEN}✓${NC} 3x-ui 服务: 运行中"
+        echo "  面板: http://localhost:2053"
+        echo "  状态: systemctl status x-ui"
     else
-        echo -e "${RED}✗${NC} Xray 服务: 未运行"
+        echo -e "${RED}✗${NC} 3x-ui 服务: 未运行"
     fi
 
     echo ""
@@ -393,7 +398,7 @@ show_menu() {
     echo "3) 重启所有服务"
     echo "4) 查看服务状态"
     echo "5) 查看日志"
-    echo "6) 检查 Xray gRPC 连接"
+    echo "6) 安装/升级 3x-ui"
     echo "7) 退出"
     echo ""
     read -p "请选择操作 (1-7): " CHOICE
@@ -401,7 +406,7 @@ show_menu() {
     case $CHOICE in
         1)
             check_dependencies
-            check_xray
+            check_3xui
             setup_backend
             setup_frontend
             start_backend
@@ -410,7 +415,9 @@ show_menu() {
             echo ""
             log_info "所有服务已启动！"
             log_info "访问前端: http://localhost:5173"
-            log_info "默认账号: admin / admin123"
+            log_info "访问后端API: http://localhost:8000/docs"
+            log_info "访问3x-ui面板: http://localhost:2053"
+            log_info "默认账号: admin / admin"
             ;;
         2)
             stop_services
@@ -429,8 +436,7 @@ show_menu() {
             show_logs
             ;;
         6)
-            cd "$BACKEND_DIR"
-            uv run python scripts/check_xray_grpc.py
+            sudo "$PROJECT_ROOT/scripts/install_3x-ui.sh"
             ;;
         7)
             exit 0
@@ -443,7 +449,7 @@ show_menu() {
 
 if [ "${1:-}" = "start" ]; then
     check_dependencies
-    check_xray
+    check_3xui
     setup_backend
     setup_frontend
     start_backend
